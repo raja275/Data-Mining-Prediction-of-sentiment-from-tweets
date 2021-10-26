@@ -1,0 +1,94 @@
+---
+title: "Untitled"
+output: pdf_document
+---
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+```
+
+```{r}
+Tweets$airline_sentiment[Tweets$airline_sentiment=="neutral"]<-"positive"
+Tweets%>%
+  group_by(airline,airline_sentiment)%>%
+  summarise(count=n())%>%
+  ggplot(aes(y=count,x=airline,fill=airline_sentiment))+
+  geom_bar(stat="identity",position = "dodge")+
+  ylab("No. of Tweets")+
+  xlab("Airline")+
+  scale_fill_hue(name="Airline sentiment",labels=c("Negative","Postive"))+
+  ggtitle("Number of tweets based on sentiment type")+
+  theme(plot.title = element_text(hjust = .5,
+                                  face="bold.italic",color="#663300",size=16),
+        legend.title = element_text(hjust = .5),
+        legend.text = element_text(size = 10),
+        strip.background = element_blank(),
+        axis.ticks = element_blank())
+ggsave("Bar.png",dpi = 1080)
+
+
+```
+```{r}
+
+Tweets%>%
+  group_by(airline,airline_sentiment,tweet_created)%>%
+  summarise(count=n())%>%
+  ggplot(aes(x=tweet_created,y=count,colour=airline))+geom_line()+
+  facet_wrap(~airline_sentiment)+
+  xlab("Tweet Date")+
+  ylab("No. of tweets")+
+  scale_color_hue(name="Airline name")+
+  ggtitle("Trend of tweets for different Airlines")+
+  theme(plot.title = element_text(hjust = .5,
+                                  face="bold.italic",color="#663300",size=16),
+        legend.title = element_text(hjust = .5),
+        legend.text = element_text(size = 10),
+        strip.background = element_blank())
+
+
+ggsave("Trend.png",dpi = 1080)
+
+```
+
+```{r}
+
+Tweets%>%
+  group_by(negativereason,airline)%>%
+  summarise(count=n())%>%na.omit()%>%
+  ggplot(aes(x=airline,y=negativereason,fill=count))+
+  geom_tile()+
+  scale_fill_continuous(name="No. of Incidents",type = "viridis")+
+  ylab("Reason")+
+  xlab("Airline name")+
+  ggtitle("Heatmap showing Negative reasons")+
+  theme(plot.title = element_text(hjust = .5,
+                                  face="bold.italic",color="#663300",size=16),
+        legend.title = element_text(hjust = .5),
+        legend.text = element_text(size = 10),
+        strip.background = element_blank())
+ggsave("Heatmap.png",dpi = 1080)
+```
+
+```{r}
+
+Tweets%>%
+  group_by(airline,airline_sentiment)%>%
+  summarise(count=n(),values=mean(airline_sentiment_confidence))%>%na.omit()%>%
+  ggplot(aes(x=values,y=count,shape=airline_sentiment,colour=airline))+
+  geom_point()+
+  ylab("No of Tweets")+
+  xlab("Airline Sentiment confidence")+
+  ggtitle("Plot of airline sentiment with there confidence level")+
+  theme(plot.title = element_text(hjust = .5,
+                                  face="bold.italic",color="#663300",size=16),
+        legend.title = element_text(hjust = .5),
+        legend.text = element_text(size = 10),
+        strip.background = element_blank())+
+  scale_color_hue(name="Airline")+
+  scale_shape(name="Sentiment type",label=c("Negative","Positive"))
+ggsave("confidence.png",dpi = 1080)
+```
+

@@ -1,0 +1,148 @@
+---
+title: "proj1"
+author: "Group 24"
+date: "22/03/2020"
+output: pdf_document
+---
+
+```{r }
+library(caret)
+library(gmodels)
+library(forecast)
+library(ggplot2)
+library(stringr)
+library(readr)
+library(dplyr)
+library(tm)
+library(SnowballC)
+library(nnet)
+library(neuralnet)
+library(e1071)
+library(MASS)
+library(rpart)
+```
+```{r }
+txtprproc <- function(x){
+  
+x <- Corpus(VectorSource(x))  # Converting to Corpus
+x <- tm_map(x,PlainTextDocument)  # Plain Text Document creation
+x <- tm_map(x,tolower)  # Converting the data to lower case.
+x <- tm_map(x,removePunctuation)  # Removing Punctuation
+x <- tm_map(x,removeWords,c(stopwords(kind = "en"))) # Removing unnecessary stopwords.
+x <- tm_map(x,stemDocument)  # Creating stems of words to remove inflections.
+return(x)
+}
+```
+
+
+
+
+```{r }
+twts <- read.csv("Tweets.csv")
+
+x1 <- summary(twts$airline)
+x1 <- data.frame(x1)
+x1$Airlines <- rownames(x1)
+rownames(x1) <- c(1,2,3,4,5,6)
+x1 <- x1[,c("Airlines","x1")]
+colnames(x1)<- c("Airlines","Count")
+barplot(x1$Count,names.arg = c("American","Delta","Southwest","United","US Airways","Virgin America"))
+head(x1)
+
+
+
+
+```
+
+
+```{r }
+
+
+twts <- twts[,c("tweet_id","airline_sentiment","airline","text")]
+
+twtscorp <- txtprproc(twts$text)
+
+
+twtscorpfrq <- DocumentTermMatrix(twtscorp)
+twtscorpfrq <- removeSparseTerms(twtscorpfrq,0.995)
+twtscorpfrqdf <- as.data.frame(as.matrix(twtscorpfrq))
+
+colnames(twtscorpfrqdf) = make.names(colnames(twtscorpfrqdf))
+twtscorpfrqdf$sent <- twts$airline_sentiment
+
+twtscorpfrqdf$sent <- factor(twtscorpfrqdf$sent,levels = c("negative","neutral","positive"),labels = c(0,1,1))
+
+set.seed(100)
+sample <- sample.int(n = nrow(twtscorpfrqdf),size = floor(0.6*nrow(twtscorpfrqdf)),replace = FALSE)
+tr1 <- twtscorpfrqdf[sample,]
+te1 <- twtscorpfrqdf[-sample,]
+
+```
+
+
+
+Logistic Regression
+
+```{r }
+logrgrfit <- glm(sent ~ ., data = tr1, family = "binomial")
+lorgrpred <- predict(logrgrfit,te1,type = "response")
+logrgrpred <- ifelse(lorgrpred > 0.5,1,0)
+logrgrpred<-as.factor(logrgrpred)
+confusionMatrix(te1$sent,logrgrpred)
+
+```
+
+
+neuralnet
+
+```{r}
+twtscorpfrqdfnn<-data
+twtscorpfrqdfnn$negative<-twtscorpfrqdfnn$sent==0
+twtscorpfrqdfnn$positive<-twtscorpfrqdfnn$sent==1
+set.seed(100)
+sample <- sample.int(n = nrow(twtscorpfrqdfnn),size = floor(0.6*nrow(twtscorpfrqdfnn)),replace = FALSE)
+tr1nn <- twtscorpfrqdfnn[sample,]
+te1nn <- twtscorpfrqdfnn[-sample,]
+```
+
+```{r}
+
+twitter.nn <- neuralnet(negative+positive~., data = tr1nn[,-which(names(tr1nn)=="sent")], 
+                linear.output = F, hidden = 2)
+twitter.nn.predict <- compute(twitter.nn, te1nn[,-which(names(te1nn)=="sent" |names(te1nn)=="negative"|names(te1nn)=="positive")])
+predicted.class=apply(predict$net.result,1,which.max)-1
+df<-as.factor(predicted.class)
+confusionMatrix(df, te1nn$sent)
+```
+SVM
+```{r}
+set.seed(100)
+sample <- sample.int(n = nrow(twtscorpfrqdf),size = floor(0.6*nrow(twtscorpfrqdf)),replace = FALSE)
+tr1svm <- data[sample,]
+te1svm <- data[-sample,]
+twitter.svm <- svm(tr1svm[,-which(names(tr1svm)=="sent")], tr1svm[,which(names(tr1svm)=="sent")])
+twitter.svm.pred <- predict(twitter.svm, te1svm[,-which(names(te1svm)=="sent")])
+confusionMatrix(te1svm$sent,twitter.svm.pred)
+```
+LDA
+```{r}
+set.seed(100)
+sample <- sample.int(n = nrow(twtscorpfrqdf),size = floor(0.6*nrow(twtscorpfrqdf)),replace = FALSE)
+tr1ldm <- data[sample,]
+te1ldm <- data[-sample,]
+twittet.lda <- lda(sent~., tr1ldm)
+twittet.lda.predict <- predict(twittet.lda, te1ldm[,-which(names(te1ldm)=="sent")])
+prediction<-as.factor(twittet.lda.predict$class)
+confusionMatrix(te1ldm$sent,prediction)
+CrossTable(x = te1ldm[,which(names(te1)=="sent")], y =prediction, prop.chisq =FALSE,
+           prop.c = FALSE, prop.t = FALSE, prop.r = FALSE, dnn = c("Actual", "Predicted"))
+```
+
+```{r}
+default.ct <- rpart(sent ~ ., data = tr1, method = "class")
+```
+```{r}
+default.ct.point.pred.train <- predict(default.ct,te1,type = "class")
+confusionMatrix(te1$sent,default.ct.point.pred.train)
+```
+
