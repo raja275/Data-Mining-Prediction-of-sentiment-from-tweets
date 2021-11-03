@@ -1,0 +1,231 @@
+---
+title: "Prediction of sentiment from tweets"
+author: "Group 24"
+date: "22/03/2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+```{r }
+library(caret)
+library(gmodels)
+library(forecast)
+library(ggplot2)
+library(stringr)
+library(readr)
+library(dplyr)
+library(tm)
+library(SnowballC)
+library(nnet)
+library(neuralnet)
+library(e1071)
+library(MASS)
+library(rpart)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+```
+```{r }
+txtprproc <- function(x){
+  
+x <- Corpus(VectorSource(x))  # Converting to Corpus
+x <- tm_map(x,PlainTextDocument)  # Plain Text Document creation
+x <- tm_map(x,tolower)  # Converting the data to lower case.
+x <- tm_map(x,removePunctuation)  # Removing Punctuation
+x <- tm_map(x,removeWords,c(stopwords(kind = "en"))) # Removing unnecessary stopwords.
+x <- tm_map(x,stemDocument)  # Creating stems of words to remove inflections.
+return(x)
+}
+```
+
+
+
+
+```{r }
+twts <- read.csv("Tweets.csv")
+
+x1 <- summary(factor(twts$airline))
+x1 <- data.frame(x1)
+x1$Airlines <- rownames(x1)
+rownames(x1) <- c(1,2,3,4,5,6)
+x1 <- x1[,c("Airlines","x1")]
+colnames(x1)<- c("Airlines","Count")
+barplot(x1$Count,names.arg = c("American","Delta","Southwest","United","US Airways","Virgin America"))
+head(x1)
+
+
+
+
+```
+```{r}
+Tweets <-read.csv("Tweets.csv")
+Tweets$tweet_created <- as.Date(Tweets$tweet_created)
+Tweets$airline_sentiment[Tweets$airline_sentiment=="neutral"]<-"positive"
+Tweets%>%
+  group_by(airline,airline_sentiment)%>%
+  summarise(count=n())%>%
+  ggplot(aes(y=count,x=airline,fill=airline_sentiment))+
+  geom_bar(stat="identity",position = "dodge")+
+  ylab("No. of Tweets")+
+  xlab("Airline")+
+  scale_fill_hue(name="Airline sentiment",labels=c("Negative","Postive"))+
+  ggtitle("Number of tweets based on sentiment type")+
+  theme(plot.title = element_text(hjust = .5,
+                                  face="bold.italic",color="#663300",size=16),
+        legend.title = element_text(hjust = .5),
+        legend.text = element_text(size = 10),
+        strip.background = element_blank(),
+        axis.ticks = element_blank())
+
+```
+
+```{r}
+
+Tweets%>%
+  group_by(airline,airline_sentiment,tweet_created)%>%
+  summarise(count=n())%>%
+  ggplot(aes(x=tweet_created,y=count,colour=airline))+geom_line()+
+  facet_wrap(~airline_sentiment)+
+  xlab("Tweet Date")+
+  ylab("No. of tweets")+
+  scale_color_hue(name="Airline name")+
+  ggtitle("Trend of tweets for different Airlines")+
+  theme(plot.title = element_text(hjust = .5,
+                                  face="bold.italic",color="#663300",size=16),
+        legend.title = element_text(hjust = .5),
+        legend.text = element_text(size = 10),
+        strip.background = element_blank())
+
+
+
+```
+
+```{r}
+
+Tweets%>%
+  group_by(negativereason,airline)%>%
+  summarise(count=n())%>%na.omit()%>%
+  ggplot(aes(x=airline,y=negativereason,fill=count))+
+  geom_tile()+
+  scale_fill_continuous(name="No. of Incidents",type = "viridis")+
+  ylab("Reason")+
+  xlab("Airline name")+
+  ggtitle("Heatmap showing Negative reasons")+
+  theme(plot.title = element_text(hjust = .5,
+                                  face="bold.italic",color="#663300",size=16),
+        legend.title = element_text(hjust = .5),
+        legend.text = element_text(size = 10),
+        strip.background = element_blank())
+```
+
+```{r}
+
+Tweets%>%
+  group_by(airline,airline_sentiment)%>%
+  summarise(count=n(),values=mean(airline_sentiment_confidence))%>%na.omit()%>%
+  ggplot(aes(x=values,y=count,shape=airline_sentiment,colour=airline))+
+  geom_point()+
+  ylab("No of Tweets")+
+  xlab("Airline Sentiment confidence")+
+  ggtitle("Plot of airline sentiment with there confidence level")+
+  theme(plot.title = element_text(hjust = .5,
+                                  face="bold.italic",color="#663300",size=16),
+        legend.title = element_text(hjust = .5),
+        legend.text = element_text(size = 10),
+        strip.background = element_blank())+
+  scale_color_hue(name="Airline")+
+  scale_shape(name="Sentiment type",label=c("Negative","Positive"))
+```
+
+```{r }
+
+
+twts <- twts[,c("tweet_id","airline_sentiment","airline","text")]
+
+twtscorp <- txtprproc(twts$text)
+
+
+twtscorpfrq <- DocumentTermMatrix(twtscorp)
+twtscorpfrq <- removeSparseTerms(twtscorpfrq,0.995)
+twtscorpfrqdf <- as.data.frame(as.matrix(twtscorpfrq))
+
+colnames(twtscorpfrqdf) = make.names(colnames(twtscorpfrqdf))
+twtscorpfrqdf$sent <- twts$airline_sentiment
+
+
+twtscorpfrqdf$sent <- factor(twtscorpfrqdf$sent,levels = c("negative","neutral","positive"),labels = c(0,1,1))
+data <-twtscorpfrqdf
+set.seed(100)
+sample <- sample.int(n = nrow(twtscorpfrqdf),size = floor(0.6*nrow(twtscorpfrqdf)),replace = FALSE)
+tr1 <- twtscorpfrqdf[sample,]
+te1 <- twtscorpfrqdf[-sample,]
+
+```
+
+
+
+Logistic Regression
+
+```{r }
+logrgrfit <- glm(sent ~ ., data = tr1, family = "binomial")
+lorgrpred <- predict(logrgrfit,te1,type = "response")
+logrgrpred <- ifelse(lorgrpred > 0.5,1,0)
+logrgrpred<-as.factor(logrgrpred)
+confusionMatrix(te1$sent,logrgrpred)
+
+```
+
+
+neuralnet
+
+```{r}
+twtscorpfrqdfnn<-data
+twtscorpfrqdfnn$negative<-twtscorpfrqdfnn$sent==0
+twtscorpfrqdfnn$positive<-twtscorpfrqdfnn$sent==1
+set.seed(100)
+sample <- sample.int(n = nrow(twtscorpfrqdfnn),size = floor(0.6*nrow(twtscorpfrqdfnn)),replace = FALSE)
+tr1nn <- twtscorpfrqdfnn[sample,]
+te1nn <- twtscorpfrqdfnn[-sample,]
+```
+
+```{r}
+
+twitter.nn <- neuralnet(negative+positive~., data = tr1nn[,-which(names(tr1nn)=="sent")], 
+                linear.output = F, hidden = 2)
+twitter.nn.predict <- compute(twitter.nn, te1nn[,-which(names(te1nn)=="sent" |names(te1nn)=="negative"|names(te1nn)=="positive")])
+predicted.class=apply(twitter.nn.predict$net.result,1,which.max)-1
+df<-as.factor(predicted.class)
+confusionMatrix(df, te1nn$sent)
+```
+SVM
+```{r}
+set.seed(100)
+sample <- sample.int(n = nrow(twtscorpfrqdf),size = floor(0.6*nrow(twtscorpfrqdf)),replace = FALSE)
+tr1svm <- data[sample,]
+te1svm <- data[-sample,]
+twitter.svm <- svm(tr1svm[,-which(names(tr1svm)=="sent")], tr1svm[,which(names(tr1svm)=="sent")])
+twitter.svm.pred <- predict(twitter.svm, te1svm[,-which(names(te1svm)=="sent")])
+confusionMatrix(te1svm$sent,twitter.svm.pred)
+CrossTable(x = te1svm[,which(names(te1)=="sent")], y =twitter.svm.pred, prop.chisq =FALSE,
+           prop.c = FALSE, prop.t = FALSE, prop.r = FALSE, dnn = c("Actual", "Predicted"))
+```
+LDA
+```{r}
+set.seed(100)
+sample <- sample.int(n = nrow(twtscorpfrqdf),size = floor(0.6*nrow(twtscorpfrqdf)),replace = FALSE)
+tr1ldm <- data[sample,]
+te1ldm <- data[-sample,]
+twittet.lda <- lda(sent~., tr1ldm)
+twittet.lda.predict <- predict(twittet.lda, te1ldm[,-which(names(te1ldm)=="sent")])
+prediction<-as.factor(twittet.lda.predict$class)
+confusionMatrix(te1ldm$sent,prediction)
+CrossTable(x = te1ldm[,which(names(te1)=="sent")], y =prediction, prop.chisq =FALSE,
+           prop.c = FALSE, prop.t = FALSE, prop.r = FALSE, dnn = c("Actual", "Predicted"))
+```
+
